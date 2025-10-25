@@ -240,6 +240,17 @@ const ReVim = {
           e.preventDefault();
           break;
 
+        case "g":
+          this.goToTop();
+          this.logger.debug(`Moved to top`);
+          e.preventDefault();
+          break;
+        case "G":
+          this.goToBottom();
+          this.logger.debug(`Moved to bottom`);
+          e.preventDefault();
+          break;
+
         case "n":
           this.nextUnviewedDiff();
           this.logger.debug(`Moved to next unviewed diff`);
