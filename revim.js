@@ -67,7 +67,7 @@ const ReVim = {
 
     this.diffs = diffs;
 
-    this.currentIndex = this.diffs.findIndex((diff) => diff.markedAsViewed);
+    this.currentIndex = this.diffs.findIndex((diff) => !diff.markedAsViewed);
 
     if (this.currentIndex === -1 && this.diffs.length > 0) {
       this.currentIndex = 0;
