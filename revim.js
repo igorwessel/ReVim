@@ -216,7 +216,7 @@ const ReVim = {
   },
 
   setupKeybindings() {
-    let count = 1;
+    let countBuffer = "";
     let countTimeout = null;
 
     this.keydownListener = (e) => {
@@ -227,6 +227,24 @@ const ReVim = {
       ) {
         return;
       }
+
+      if (e.key >= "0" && e.key <= "9") {
+        if (countBuffer === "" && e.key === "0") {
+          return;
+        }
+
+        countBuffer += e.key;
+        countTimeout = setTimeout(() => {
+          countBuffer = "";
+        }, 1000);
+
+        e.preventDefault();
+        return;
+      }
+
+      const count = parseInt(countBuffer) || 1;
+      countBuffer = "";
+      clearTimeout(countTimeout);
 
       switch (e.key) {
         case "j":
@@ -247,8 +265,14 @@ const ReVim = {
           e.preventDefault();
           break;
         case "G":
-          this.goToBottom();
-          this.logger.debug(`Moved to bottom`);
+          if (count >= 1) {
+            this.logger.debug(`Moved to line - ${count - 1} diffs`);
+            this.moveTo(count - 1);
+          } else {
+            this.goToBottom();
+            this.logger.debug(`Moved to bottom`);
+          }
+
           e.preventDefault();
           break;
 
