@@ -6,6 +6,7 @@ const ReVim = {
   initialized: false,
   lastInitializedPath: null,
   diffSelector: '[id^="diff-"][role="region"]:not([aria-label*="Loading"])',
+  keydownListener: null,
 
   logger: {
     debug: (message) => {
@@ -218,7 +219,7 @@ const ReVim = {
     let count = 1;
     let countTimeout = null;
 
-    this.keydownListener = document.addEventListener("keydown", (e) => {
+    this.keydownListener = (e) => {
       if (
         e.target.tagName === "INPUT" ||
         e.target.tagName === "TEXTAREA" ||
@@ -285,7 +286,16 @@ const ReVim = {
         default:
           this.lastKey = null;
       }
-    });
+    };
+
+    document.addEventListener("keydown", this.keydownListener);
+  },
+
+  removeKeybindings() {
+    if (!this.keydownListener) return;
+
+    document.removeEventListener("keydown", this.keydownListener);
+    this.keydownListener = null;
   },
 };
 
@@ -307,6 +317,7 @@ async function safeInit() {
   if (!ReVim.isPRFiles()) {
     ReVim.logger.debug("Not a PR Files page, skipping init");
     ReVim.initialized = false;
+    ReVim.removeKeybindings();
     return;
   }
 
