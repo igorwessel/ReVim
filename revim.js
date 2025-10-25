@@ -1,8 +1,11 @@
-const Revim = {
+const ReVim = {
   diffs: [],
   currentIndex: -1,
   motionCount: 0,
   activeClass: "revim-active-diff",
+  initialized: false,
+  lastInitializedPath: null,
+  diffSelector: '[id^="diff-"][role="region"]:not([aria-label*="Loading"])',
 
   logger: {
     debug: (message) => {
@@ -18,13 +21,23 @@ const Revim = {
       console.error(`[Revim] `, message);
     },
   },
+  isPRFiles() {
+    return /pull\/\d+\/files/.test(location.pathname);
+  },
 
-  init() {
+  async init() {
+    if (this.initialized) {
+      this.logger.debug("Already initialized, reloading diffs");
+      return;
+    }
     this.logger.debug("Initializing Revim");
 
     this.injectStyles();
     this.loadDiffs();
     this.setupKeybindings();
+    this.initialized = true;
+
+    this.logger.debug(`ReVim loaded - ${this.diffs.length} diffs found`);
   },
 
   injectStyles() {
@@ -42,55 +55,80 @@ const Revim = {
   },
 
   loadDiffs() {
-    const diffHeaders = document.querySelectorAll(
-      '[id^="diff-"][role="region"]'
+    const appData = JSON.parse(
+      document.querySelector('[data-target="react-app.embeddedData"]').innerHTML
     );
+    const payload = appData.payload;
+    const diffs = payload.diffSummaries;
 
-    this.diffs = Array.from(diffHeaders);
+    // const diffHeaders = document.querySelectorAll(this.diffSelector);
+    // this.diffs = Array.from(diffHeaders);
 
-    this.currentIndex = this.diffs.findIndex((diff) => this.isUnviewed(diff));
+    this.diffs = diffs;
+
+    this.currentIndex = this.diffs.findIndex((diff) => diff.markedAsViewed);
 
     if (this.currentIndex === -1 && this.diffs.length > 0) {
       this.currentIndex = 0;
     }
   },
 
-  getUnviewedDiff() {
-    return this.diffs.filter((diff) => this.isUnviewed(diff));
+  getViewedButton(diffElement) {
+    return diffElement.querySelector("button[aria-pressed]");
   },
 
-  getViewedButton(diff) {
-    return diff.querySelector("button[aria-pressed]");
+  getDiffElement(diff) {
+    return document.getElementById(`diff-${diff.pathDigest}`);
   },
 
-  getDiffStatus(diff) {
-    const btn = this.getViewedButton(diff);
+  getDiffStatus(diffElement) {
+    const btn = this.getViewedButton(diffElement);
+
     return btn && btn.getAttribute("aria-pressed");
   },
 
   isUnviewed(diff) {
-    return this.getDiffStatus(diff) === "false";
+    const diffElement = this.getDiffElement(diff);
+
+    if (!diffElement) return;
+
+    return this.getDiffStatus(diffElement) === "false";
   },
 
   isViewed(diff) {
-    return this.getDiffStatus(diff) === "true";
+    const diffElement = this.getDiffElement(diff);
+
+    if (!diffElement) return;
+
+    return this.getDiffStatus(diffElement) === "true";
   },
 
   moveTo(index) {
     if (index < 0 || index >= this.diffs.length) return;
 
+    const diffElement = this.getDiffElement(this.diffs[index]);
+
+    ReVim.logger.debug(diffElement);
+    ReVim.logger.debug(this.diffs[index]);
+
+    if (!diffElement) return;
+
     if (this.currentIndex >= 0 && this.diffs[this.currentIndex]) {
-      this.diffs[this.currentIndex].classList.remove(this.activeClass);
+      const currentDiff = this.getDiffElement(this.diffs[this.currentIndex]);
+
+      if (currentDiff) {
+        currentDiff.classList.remove(this.activeClass);
+      }
     }
 
     this.currentIndex = index;
 
-    const diff = this.diffs[index];
-    diff.classList.add(this.activeClass);
+    diffElement.classList.add(this.activeClass);
     this.logger.debug(`Moved to diff ${index}`);
-    this.logger.debug(diff);
-    this.scrollToElement(diff);
-    diff.focus();
+    this.logger.debug(diffElement);
+    // location.replace("#" + getDiff.id);
+    this.scrollToElement(diffElement);
+    diffElement.focus();
   },
 
   scrollToElement(element) {
@@ -160,25 +198,27 @@ const Revim = {
 
   markAsViewed() {
     const diff = this.diffs[this.currentIndex];
-    const btn = this.getViewedButton(diff);
+    const diffElement = this.getDiffElement(diff);
+
+    const btn = this.getViewedButton(diffElement);
     if (btn) {
       btn.click();
     }
   },
 
   goToTop() {
-    moveTo(0);
+    this.moveTo(0);
   },
 
   goToBottom() {
-    moveTo(this.diffs.length - 1);
+    this.moveTo(this.diffs.length - 1);
   },
 
   setupKeybindings() {
-    let countBuffer = "";
+    let count = 1;
     let countTimeout = null;
 
-    document.addEventListener("keydown", (e) => {
+    this.keydownListener = document.addEventListener("keydown", (e) => {
       if (
         e.target.tagName === "INPUT" ||
         e.target.tagName === "TEXTAREA" ||
@@ -238,10 +278,60 @@ const Revim = {
   },
 };
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
-    Revim.init();
+async function isReadyForInit() {
+  if (!ReVim.isPRFiles()) return false;
+
+  for (let i = 0; i < 20; i++) {
+    if (document.querySelector(ReVim.diffSelector)) return true;
+
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  return false;
+}
+
+async function safeInit() {
+  const currentPath = location.pathname;
+
+  if (!ReVim.isPRFiles()) {
+    ReVim.logger.debug("Not a PR Files page, skipping init");
+    ReVim.initialized = false;
+    return;
+  }
+
+  if (ReVim.lastInitializedPath === currentPath && ReVim.initialized) {
+    ReVim.logger.debug("Already initialized for this path, reloading diffs");
+    ReVim.loadDiffs();
+    return;
+  }
+
+  ReVim.logger.debug("Checking if page is ready for init");
+  const ready = await isReadyForInit();
+  if (!ready) {
+    ReVim.logger.debug("Page not ready for init");
+    return;
+  }
+
+  ReVim.lastInitializedPath = currentPath;
+
+  if (ReVim.initialized) {
+    ReVim.logger.debug("Already initialized, refreshing diffs");
+    ReVim.loadDiffs();
+  } else {
+    ReVim.logger.debug("Initializing Revim for this PR page");
+    ReVim.init();
+  }
+}
+
+["turbo:render", "turbo:load", "pjax:end", "soft-nav:end"].forEach((evt) => {
+  document.addEventListener(evt, () => {
+    ReVim.logger.debug(`Navigation event detected: ${evt}`);
+    safeInit();
   });
+});
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", safeInit);
 } else {
-  Revim.init();
+  safeInit();
 }

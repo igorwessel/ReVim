@@ -5,10 +5,7 @@
   "description": "Adds vim keybindings to github pull requests review.",
   "content_scripts": [
     {
-      "matches": [
-        "*://github.com/*/pull/*/files",
-        "*://github.com/*/pull/*/files?*"
-      ],
+      "matches": ["*://github.com/*"],
       "js": ["revim.js"]
     }
   ]
