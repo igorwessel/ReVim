@@ -102,7 +102,7 @@ const ReVim = {
 
   async init() {
     if (this.initialized) {
-      this.logger.debug("Already initialized, reloading diffs");
+      this.logger.debug("Skipping initialization, already initialized");
       return;
     }
 
@@ -291,18 +291,6 @@ const ReVim = {
   },
 };
 
-async function isReadyForInit() {
-  if (!ReVim.isPRFiles()) return false;
-
-  for (let i = 0; i < 20; i++) {
-    if (document.querySelector(ReVim.diffSelector)) return true;
-
-    await new Promise((r) => setTimeout(r, 100));
-  }
-
-  return false;
-}
-
 async function safeInit() {
   const currentPath = location.pathname;
 
@@ -319,22 +307,8 @@ async function safeInit() {
     return;
   }
 
-  ReVim.logger.debug("Checking if page is ready for init");
-  const ready = await isReadyForInit();
-  if (!ready) {
-    ReVim.logger.debug("Page not ready for init");
-    return;
-  }
-
   ReVim.lastInitializedPath = currentPath;
-
-  if (ReVim.initialized) {
-    ReVim.logger.debug("Already initialized, refreshing diffs");
-    ReVim.loadDiffs();
-  } else {
-    ReVim.logger.debug("Initializing Revim for this PR page");
-    ReVim.init();
-  }
+  ReVim.init();
 }
 
 ["turbo:render", "turbo:load", "pjax:end", "soft-nav:end"].forEach((evt) => {
