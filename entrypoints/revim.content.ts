@@ -89,7 +89,6 @@ const ReVim = {
   currentIndex: -1,
   initialized: false,
   lastInitializedPath: null as string | null,
-  isClassicDiff: false,
   logger: {
     debug: (message: unknown) => {
       console.debug(`[Revim]`, message);
@@ -130,35 +129,11 @@ const ReVim = {
     );
 
     if (!appDataJson) {
-      this.isClassicDiff = true;
-    }
-
-    let appData: { payload: { diffSummaries: DiffSummary[] } } | undefined;
-
-    if (this.isClassicDiff) {
-      const diffs = document.querySelectorAll(".file");
-
-      this.logger.debug(`${diffs.length} classic diffs found`);
-
-      if (diffs.length > 0) {
-        appData = {
-          payload: {
-            diffSummaries: Array.from(diffs).map((diff) => ({
-              pathDigest: diff.id,
-              markedAsViewed: false,
-            })),
-          },
-        };
-      }
-    } else {
-      appData = JSON.parse(appDataJson?.innerHTML || "");
-    }
-
-    if (!appData) {
-      this.logger.debug("No app data found, skipping diffs");
+      this.logger.warn("Classic Experience not supported.");
       return;
     }
 
+    const appData = JSON.parse(appDataJson.innerHTML);
     const payload = appData.payload;
     const diffs = payload.diffSummaries;
     this.diffs = diffs;
@@ -171,22 +146,10 @@ const ReVim = {
   },
 
   getViewedButton(diffElement: HTMLElement) {
-    if (this.isClassicDiff) {
-      return diffElement.querySelector<HTMLInputElement>(
-        "input[name='viewed']"
-      );
-    }
-
     return diffElement.querySelector<HTMLButtonElement>("button[aria-pressed]");
   },
 
   getDiffElement(diff: DiffSummary) {
-    if (this.isClassicDiff) {
-      return document.querySelector<HTMLDivElement>(
-        `.file[id="${diff.pathDigest}"]`
-      );
-    }
-
     return document.getElementById(`diff-${diff.pathDigest}`);
   },
 
@@ -194,10 +157,6 @@ const ReVim = {
     const btn = this.getViewedButton(diffElement);
 
     if (!btn) return String(false);
-
-    if (this.isClassicDiff) {
-      return String((btn as HTMLInputElement).checked);
-    }
 
     return btn.getAttribute("aria-pressed");
   },
@@ -227,12 +186,6 @@ const ReVim = {
     this.logger.debug(this.diffs[index]);
 
     if (!diffElement) return;
-
-    if (this.isClassicDiff) {
-      this.currentIndex = index;
-      location.replace(`#${this.diffs[index].pathDigest}`);
-      return;
-    }
 
     if (this.currentIndex >= 0 && this.diffs[this.currentIndex]) {
       const currentDiff = this.getDiffElement(this.diffs[this.currentIndex]);
