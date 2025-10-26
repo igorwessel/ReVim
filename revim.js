@@ -45,7 +45,6 @@ const Command = {
       if (this.countBuffer === "" && e.key === "0") return;
 
       this.countBuffer += e.key;
-      clearTimeout(this.countTimeout);
       this.countTimeout = setTimeout(() => (this.countBuffer = ""), 1000);
       e.preventDefault();
       return;
@@ -59,6 +58,8 @@ const Command = {
     const count = parseInt(this.countBuffer) || 1;
     this.countBuffer = "";
     command(count);
+    clearTimeout(this.countTimeout);
+    this.countTimeout = null;
     e.preventDefault();
   },
   init() {
@@ -68,6 +69,9 @@ const Command = {
   remove() {
     if (!this._boundHandleKeydown) return;
 
+    clearTimeout(this.countTimeout);
+    this.countTimeout = null;
+    this.countBuffer = "";
     document.removeEventListener("keydown", this._boundHandleKeydown);
     this._boundHandleKeydown = null;
   },
@@ -76,11 +80,9 @@ const Command = {
 const ReVim = {
   diffs: [],
   currentIndex: -1,
-  motionCount: 0,
-  activeClass: "revim-active-diff",
   initialized: false,
   lastInitializedPath: null,
-  diffSelector: '[id^="diff-"][role="region"]:not([aria-label*="Loading"])',
+  isClassicDiff: false,
   logger: {
     debug: (message) => {
       console.debug(`[Revim] `, message);
@@ -115,9 +117,33 @@ const ReVim = {
   },
 
   loadDiffs() {
-    const appData = JSON.parse(
-      document.querySelector('[data-target="react-app.embeddedData"]').innerHTML
-    );
+    let appDataJson = document.querySelector(
+      '[data-target="react-app.embeddedData"]'
+    )?.innerHTML;
+
+    try {
+      appData = JSON.parse(appDataJson);
+    } catch {
+      this.isClassicDiff = true;
+      const diffs = document.querySelectorAll(".file");
+
+      if (diffs.length > 0) {
+        appData = {
+          payload: {
+            diffSummaries: Array.from(diffs).map((diff) => ({
+              pathDigest: diff.id,
+              markedAsViewed: false,
+            })),
+          },
+        };
+      }
+    }
+
+    if (!appData) {
+      this.logger.debug("No app data found, skipping diffs");
+      return;
+    }
+
     const payload = appData.payload;
     const diffs = payload.diffSummaries;
     this.diffs = diffs;
@@ -130,23 +156,37 @@ const ReVim = {
   },
 
   getViewedButton(diffElement) {
+    if (this.isClassicDiff) {
+      return diffElement.querySelector("input[name='viewed']");
+    }
+
     return diffElement.querySelector("button[aria-pressed]");
   },
 
   getDiffElement(diff) {
+    if (this.isClassicDiff) {
+      return document.querySelector(`.file[id="${diff.pathDigest}"]`);
+    }
+
     return document.getElementById(`diff-${diff.pathDigest}`);
   },
 
   getDiffStatus(diffElement) {
     const btn = this.getViewedButton(diffElement);
 
-    return btn && btn.getAttribute("aria-pressed");
+    if (!btn) return String(false);
+
+    if (this.isClassicDiff) {
+      return String(btn.checked);
+    }
+
+    return btn.getAttribute("aria-pressed");
   },
 
   isUnviewed(diff) {
     const diffElement = this.getDiffElement(diff);
 
-    if (!diffElement) return;
+    if (!diffElement) return false;
 
     return this.getDiffStatus(diffElement) === "false";
   },
@@ -154,7 +194,7 @@ const ReVim = {
   isViewed(diff) {
     const diffElement = this.getDiffElement(diff);
 
-    if (!diffElement) return;
+    if (!diffElement) return false;
 
     return this.getDiffStatus(diffElement) === "true";
   },
@@ -169,6 +209,12 @@ const ReVim = {
 
     if (!diffElement) return;
 
+    if (this.isClassicDiff) {
+      this.currentIndex = index;
+      location.replace(`#${this.diffs[index].pathDigest}`);
+      return;
+    }
+
     if (this.currentIndex >= 0 && this.diffs[this.currentIndex]) {
       const currentDiff = this.getDiffElement(this.diffs[this.currentIndex]);
 
@@ -181,7 +227,6 @@ const ReVim = {
 
     diffElement.dataset.targeted = "true";
     diffElement.scrollIntoView({ behavior: "smooth" });
-    diffElement.focus();
 
     this.logger.debug(`Moved to diff ${index}`);
     this.logger.debug(diffElement);
@@ -199,9 +244,9 @@ const ReVim = {
 
   nextUnviewedDiff() {
     for (let i = this.currentIndex + 1; i < this.diffs.length; i++) {
-      const btn = this.isUnviewed(this.diffs[i]);
+      const isUnviewed = this.isUnviewed(this.diffs[i]);
 
-      if (!btn) continue;
+      if (!isUnviewed) continue;
 
       this.moveTo(i);
       return;
@@ -212,8 +257,9 @@ const ReVim = {
 
   prevUnviewedDiff() {
     for (let i = this.currentIndex - 1; i >= 0; i--) {
-      const btn = this.isUnviewed(this.diffs[i]);
-      if (!btn) continue;
+      const isUnviewed = this.isUnviewed(this.diffs[i]);
+
+      if (!isUnviewed) continue;
 
       this.moveTo(i);
       return;
