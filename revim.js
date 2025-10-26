@@ -81,7 +81,6 @@ const ReVim = {
   initialized: false,
   lastInitializedPath: null,
   diffSelector: '[id^="diff-"][role="region"]:not([aria-label*="Loading"])',
-
   logger: {
     debug: (message) => {
       console.debug(`[Revim] `, message);
@@ -109,25 +108,10 @@ const ReVim = {
     this.logger.debug("Initializing Revim");
 
     Command.init();
-    this.injectStyles();
     this.loadDiffs();
     this.initialized = true;
 
     this.logger.debug(`ReVim loaded - ${this.diffs.length} diffs found`);
-  },
-
-  injectStyles() {
-    if (document.getElementById("revim-styles")) return;
-
-    const style = document.createElement("style");
-    style.id = "revim-styles";
-    style.textContent = `
-      .${this.activeClass} *:not(button, tr, td, div[class*="DiffSquares"]) {
-        border-color: var(--borderColor-accent-emphasis) !important;
-      }
-    `;
-
-    document.head.appendChild(style);
   },
 
   loadDiffs() {
@@ -136,10 +120,6 @@ const ReVim = {
     );
     const payload = appData.payload;
     const diffs = payload.diffSummaries;
-
-    // const diffHeaders = document.querySelectorAll(this.diffSelector);
-    // this.diffs = Array.from(diffHeaders);
-
     this.diffs = diffs;
 
     this.currentIndex = this.diffs.findIndex((diff) => !diff.markedAsViewed);
@@ -184,8 +164,8 @@ const ReVim = {
 
     const diffElement = this.getDiffElement(this.diffs[index]);
 
-    ReVim.logger.debug(diffElement);
-    ReVim.logger.debug(this.diffs[index]);
+    this.logger.debug(diffElement);
+    this.logger.debug(this.diffs[index]);
 
     if (!diffElement) return;
 
@@ -193,48 +173,18 @@ const ReVim = {
       const currentDiff = this.getDiffElement(this.diffs[this.currentIndex]);
 
       if (currentDiff) {
-        currentDiff.classList.remove(this.activeClass);
+        currentDiff.dataset.targeted = "false";
       }
     }
 
     this.currentIndex = index;
 
-    diffElement.classList.add(this.activeClass);
+    diffElement.dataset.targeted = "true";
+    diffElement.scrollIntoView({ behavior: "smooth" });
+    diffElement.focus();
+
     this.logger.debug(`Moved to diff ${index}`);
     this.logger.debug(diffElement);
-    // location.replace("#" + getDiff.id);
-    this.scrollToElement(diffElement);
-    diffElement.focus();
-  },
-
-  scrollToElement(element) {
-    const rect = element.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-
-    const topOffset = rect.top;
-    const bottomOffset = viewportHeight - rect.bottom;
-
-    const minTopMargin = 80; // Space from top (for GitHub header)
-    const minBottomMargin = 100; // Space from bottom
-
-    if (
-      topOffset < minTopMargin ||
-      bottomOffset < minBottomMargin ||
-      rect.top < 0 ||
-      rect.bottom > viewportHeight
-    ) {
-      const elementTop = element.offsetTop;
-      const elementHeight = element.offsetHeight;
-      const offset = Math.max(
-        minTopMargin,
-        (viewportHeight - elementHeight) / 3
-      );
-
-      window.scrollTo({
-        top: elementTop - offset,
-        behavior: "smooth",
-      });
-    }
   },
 
   moveDown(count = 1) {
