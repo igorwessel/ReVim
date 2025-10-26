@@ -1,3 +1,78 @@
+const Command = {
+  countBuffer: "",
+  countTimeout: null,
+  _boundHandleKeydown: null,
+  keymaps: {
+    j: (count) => {
+      ReVim.moveDown(count);
+    },
+    k: (count) => {
+      ReVim.moveUp(count);
+    },
+    g: () => {
+      ReVim.goToTop();
+    },
+    G: () => {
+      ReVim.goToBottom();
+    },
+    n: () => {
+      ReVim.nextUnviewedDiff();
+    },
+    N: () => {
+      ReVim.prevUnviewedDiff();
+    },
+    v: () => {
+      ReVim.markAsViewed();
+      ReVim.nextUnviewedDiff();
+    },
+    V: () => {
+      ReVim.markAsViewed();
+    },
+    r: () => {
+      ReVim.loadDiffs();
+    },
+  },
+  handleKeydown(e) {
+    if (
+      e.target.tagName === "INPUT" ||
+      e.target.tagName === "TEXTAREA" ||
+      e.target.contentEditable === "true"
+    ) {
+      return;
+    }
+
+    if (e.key >= "0" && e.key <= "9") {
+      if (this.countBuffer === "" && e.key === "0") return;
+
+      this.countBuffer += e.key;
+      clearTimeout(this.countTimeout);
+      this.countTimeout = setTimeout(() => (this.countBuffer = ""), 1000);
+      e.preventDefault();
+      return;
+    }
+
+    const command = this.keymaps[e.key];
+
+    if (!command) return;
+
+    ReVim.logger.debug(`Executing command for key "${e.key}"`);
+    const count = parseInt(this.countBuffer) || 1;
+    this.countBuffer = "";
+    command(count);
+    e.preventDefault();
+  },
+  init() {
+    this._boundHandleKeydown = this.handleKeydown.bind(this);
+    document.addEventListener("keydown", this._boundHandleKeydown);
+  },
+  remove() {
+    if (!this._boundHandleKeydown) return;
+
+    document.removeEventListener("keydown", this._boundHandleKeydown);
+    this._boundHandleKeydown = null;
+  },
+};
+
 const ReVim = {
   diffs: [],
   currentIndex: -1,
@@ -6,7 +81,6 @@ const ReVim = {
   initialized: false,
   lastInitializedPath: null,
   diffSelector: '[id^="diff-"][role="region"]:not([aria-label*="Loading"])',
-  keydownListener: null,
 
   logger: {
     debug: (message) => {
@@ -31,11 +105,12 @@ const ReVim = {
       this.logger.debug("Already initialized, reloading diffs");
       return;
     }
+
     this.logger.debug("Initializing Revim");
 
+    Command.init();
     this.injectStyles();
     this.loadDiffs();
-    this.setupKeybindings();
     this.initialized = true;
 
     this.logger.debug(`ReVim loaded - ${this.diffs.length} diffs found`);
@@ -214,113 +289,6 @@ const ReVim = {
   goToBottom() {
     this.moveTo(this.diffs.length - 1);
   },
-
-  setupKeybindings() {
-    let countBuffer = "";
-    let countTimeout = null;
-
-    this.keydownListener = (e) => {
-      if (
-        e.target.tagName === "INPUT" ||
-        e.target.tagName === "TEXTAREA" ||
-        e.target.contentEditable === "true"
-      ) {
-        return;
-      }
-
-      if (e.key >= "0" && e.key <= "9") {
-        if (countBuffer === "" && e.key === "0") {
-          return;
-        }
-
-        countBuffer += e.key;
-        countTimeout = setTimeout(() => {
-          countBuffer = "";
-        }, 1000);
-
-        e.preventDefault();
-        return;
-      }
-
-      const count = parseInt(countBuffer) || 1;
-      countBuffer = "";
-      clearTimeout(countTimeout);
-
-      switch (e.key) {
-        case "j":
-          this.moveDown(count);
-          this.logger.debug(`Moved down ${count} diffs`);
-          e.preventDefault();
-          break;
-
-        case "k":
-          this.moveUp(count);
-          this.logger.debug(`Moved up ${count} diffs`);
-          e.preventDefault();
-          break;
-
-        case "g":
-          this.goToTop();
-          this.logger.debug(`Moved to top`);
-          e.preventDefault();
-          break;
-        case "G":
-          if (count >= 1) {
-            this.logger.debug(`Moved to line - ${count - 1} diffs`);
-            this.moveTo(count - 1);
-          } else {
-            this.goToBottom();
-            this.logger.debug(`Moved to bottom`);
-          }
-
-          e.preventDefault();
-          break;
-
-        case "n":
-          this.nextUnviewedDiff();
-          this.logger.debug(`Moved to next unviewed diff`);
-          e.preventDefault();
-          break;
-
-        case "N":
-          this.prevUnviewedDiff();
-          this.logger.debug(`Moved to previous unviewed diff`);
-          e.preventDefault();
-          break;
-
-        case "v":
-          this.markAsViewed();
-          this.nextUnviewedDiff();
-          this.logger.debug(`Marked as viewed and moved to next unviewed diff`);
-          e.preventDefault();
-          break;
-
-        case "V":
-          this.markAsViewed();
-          this.logger.debug(`Marked as viewed`);
-          e.preventDefault();
-          break;
-
-        case "r":
-          this.loadDiffs();
-          this.logger.debug("Reloaded diffs");
-          e.preventDefault();
-          break;
-
-        default:
-          this.lastKey = null;
-      }
-    };
-
-    document.addEventListener("keydown", this.keydownListener);
-  },
-
-  removeKeybindings() {
-    if (!this.keydownListener) return;
-
-    document.removeEventListener("keydown", this.keydownListener);
-    this.keydownListener = null;
-  },
 };
 
 async function isReadyForInit() {
@@ -341,7 +309,7 @@ async function safeInit() {
   if (!ReVim.isPRFiles()) {
     ReVim.logger.debug("Not a PR Files page, skipping init");
     ReVim.initialized = false;
-    ReVim.removeKeybindings();
+    Command.remove();
     return;
   }
 
